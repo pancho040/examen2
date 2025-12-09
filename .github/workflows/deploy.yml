@@ -1,4 +1,4 @@
-name: Deploy Static Website with Docker
+name: Deploy Static Website
 
 on:
   push:
@@ -8,67 +8,52 @@ on:
 
 jobs:
   build-and-push:
-    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to DockerHub
+      - name: Docker Login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build & Push Image
+      - name: Build Docker Image
         run: |
           docker build -t ${{ secrets.DOCKER_USER }}/static-site:latest .
+
+      - name: Push Docker Image
+        run: |
           docker push ${{ secrets.DOCKER_USER }}/static-site:latest
 
-  deploy:
-    name: Deploy to Server
+  notify-success:
     needs: build-and-push
     runs-on: ubuntu-latest
-    steps:
-      - name: SSH Deploy
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ubuntu
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            mkdir -p ~/static-site
-            cd ~/static-site
-
-            echo "DOCKER_USER=${{ secrets.DOCKER_USER }}" > .env
-
-            docker compose down || true
-            docker compose pull
-            docker compose up -d
-
-  notify-success:
     if: success()
-    runs-on: ubuntu-latest
     steps:
-      - uses: dawidd6/action-send-mail@v6
+      - name: Send Success Email
+        uses: dawidd6/action-send-mail@v6
         with:
           connection_url: smtp+starttls://${{ secrets.EMAIL_USER }}:${{ secrets.EMAIL_PASSWORD }}@smtp.gmail.com:465
+          subject: "🚀 Sitio estático desplegado exitosamente"
+          body: "La imagen Docker se creó y subió correctamente a DockerHub."
           to: molinafranz943@gmail.com
           from: ${{ secrets.EMAIL_USER }}
-          subject: "✅ Despliegue exitoso"
-          body: "Tu página estática fue desplegada correctamente."
 
   notify-failure:
-    if: failure()
+    needs: build-and-push
     runs-on: ubuntu-latest
+    if: failure()
     steps:
-      - uses: dawidd6/action-send-mail@v6
+      - name: Send Failure Email
+        uses: dawidd6/action-send-mail@v6
         with:
           connection_url: smtp+starttls://${{ secrets.EMAIL_USER }}:${{ secrets.EMAIL_PASSWORD }}@smtp.gmail.com:465
+          subject: "❌ Error en pipeline de sitio estático"
+          body: "La construcción o subida de la imagen falló."
           to: molinafranz943@gmail.com
           from: ${{ secrets.EMAIL_USER }}
-          subject: "❌ Error en despliegue"
-          body: "El despliegue falló. Revisa los logs de GitHub Actions."
